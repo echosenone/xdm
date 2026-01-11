@@ -3,11 +3,10 @@ name: Force sync fork with upstream
 on:
   workflow_dispatch:
   schedule:
-    # Staggered per repo: minute=12 hour=20 (runs at hr: m and (hr+12):m)
     - cron: "12 20/12 * * *"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   sync:
@@ -34,7 +33,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Force sync to upstream
+      - name: Force sync to upstream (push via PAT)
+        env:
+          PUSH_TOKEN: ${{ secrets.PUSH_TOKEN }}
         run: |
           set -e
           UPSTREAM="https://github.com/${{ steps.repo.outputs.upstream }}.git"
@@ -44,4 +45,6 @@ jobs:
           git fetch upstream "$BRANCH" --prune
           git checkout "$BRANCH"
           git reset --hard "upstream/$BRANCH"
-          git push origin "$BRANCH" --force-with-lease
+
+          # Push as YOU (PAT), so workflow files can be updated safely.
+          git push "https://${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH" --force-with-lease
