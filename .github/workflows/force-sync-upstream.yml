@@ -1,0 +1,47 @@
+name: Force sync fork with upstream
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Staggered per repo: minute=12 hour=20 (runs at hr: m and (hr+12):m)
+    - cron: "12 20/12 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get upstream + default branch
+        id: repo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          DATA="$(gh api repos/${GITHUB_REPOSITORY})"
+          PARENT_FULL_NAME="$(echo "$DATA" | jq -r '.parent.full_name // empty')"
+          DEFAULT_BRANCH="$(echo "$DATA" | jq -r '.default_branch')"
+          if [ -z "$PARENT_FULL_NAME" ]; then
+            echo "Not a fork. Exiting."
+            exit 0
+          fi
+          echo "upstream=$PARENT_FULL_NAME" >> $GITHUB_OUTPUT
+          echo "branch=$DEFAULT_BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Force sync to upstream
+        run: |
+          set -e
+          UPSTREAM="https://github.com/${{ steps.repo.outputs.upstream }}.git"
+          BRANCH="${{ steps.repo.outputs.branch }}"
+
+          git remote add upstream "$UPSTREAM" || git remote set-url upstream "$UPSTREAM"
+          git fetch upstream "$BRANCH" --prune
+          git checkout "$BRANCH"
+          git reset --hard "upstream/$BRANCH"
+          git push origin "$BRANCH" --force-with-lease
